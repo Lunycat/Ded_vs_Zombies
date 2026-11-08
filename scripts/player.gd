@@ -1,10 +1,10 @@
 extends CharacterBody3D
+class_name Player
 
 enum State {NORMAL, KNOCKBACK}
 
 @export var max_distance_mouse: float = 50.0
-@export var SPEED: float = 6.0
-@export var JUMP_VELOCITY: float = 4.5
+@export var speed: float = 2.0
 @export var max_health: int = 100
 # Скорость гасания отталкивания
 @export var knockback_friction: float = 13.0
@@ -17,50 +17,56 @@ var _health: int = 0;
 var _knockback_velocity: Vector3 = Vector3.ZERO
 var _current_state: State = State.NORMAL
 var _attack_timer: float = 0.0
-var _tracer_material: StandardMaterial3D = null
 
 func _ready() -> void:
 	add_to_group("player")
 	_health = max_health
 	_camera = get_viewport().get_camera_3d()
 	_camera.call_deferred("look_at", self.global_position + Vector3(0, 1, 0))
-	_init_tracer_material()
 
 func _physics_process(delta: float) -> void:
 	_attack_timer -= delta
+	var horizontal_speed: float;
 	_move_activity(delta)
 	
 	if not is_on_floor():
 		_use_gravity(delta)
 
 	_change_state()
-	_action_depending_on_state(delta)
+	_action_depending_on_state(delta, horizontal_speed)
 	move_and_slide()
-
-func _init_tracer_material() -> void:
-	_tracer_material = StandardMaterial3D.new()
-	_tracer_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_tracer_material.albedo_color = Color(1.0, 0.024, 0.18, 1.0)
-	_tracer_material.emission_enabled = true
-	_tracer_material.emission = Color(1.0, 0.024, 0.18, 1.0)
-	_tracer_material.emission_energy_multiplier = 2.0
-	_tracer_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	
+	for i in get_slide_collision_count():
+		var collision = get_slide_collision(i)
+		var collider = collision.get_collider()
+		if collider is Zombie and horizontal_speed > 3:
+			collider.take_damage(100)
 
 func _use_gravity(delta: float) -> void:
 	velocity += get_gravity() * delta
 
 func _change_state() -> void:
-	if _knockback_velocity.length() > 0.0001:
+	if _knockback_velocity.length() > 1:
 		_current_state = State.KNOCKBACK
 	else:
 		_current_state = State.NORMAL
 
-func _action_depending_on_state(delta: float) -> void:
+func _action_depending_on_state(delta: float, horizontal_speed: float) -> void:
+	var friction_mul: float
+	if not is_on_floor():
+		friction_mul = 0.1
+	elif Input.is_action_pressed("space"):
+		friction_mul = 0.7
+	else:
+		friction_mul = 0.3
+
 	if _current_state == State.KNOCKBACK:
 		velocity.x = _knockback_velocity.x
 		velocity.z = _knockback_velocity.z
 		
-		var friction_mul: float = 1.0 if is_on_floor() else 0.1
+		horizontal_speed = Vector2(velocity.x, velocity.z).length()
+		print(horizontal_speed)
+		
 		_knockback_velocity = _knockback_velocity.move_toward(
 			Vector3.ZERO, knockback_friction * friction_mul * delta
 		)
@@ -75,21 +81,11 @@ func _action_depending_on_state(delta: float) -> void:
 		var direction: Vector3 = Vector3(input_dir.x, 0, input_dir.y / sin_phi)
 		
 		if direction:
-			velocity.x = direction.x * SPEED
-			velocity.z = direction.z * SPEED
+			velocity.x = move_toward(velocity.x, direction.x * speed, speed * 4 * delta)
+			velocity.z = move_toward(velocity.z, direction.z * speed, speed * 4 * delta)
 		else:
-			velocity.x = move_toward(velocity.x, 0, SPEED * 10.0 * delta)
-			velocity.z = move_toward(velocity.z, 0, SPEED * 10.0 * delta)
-
-func take_damage(damage: int) -> void:
-	_health -= damage
-	if _health <= 0:
-		_die()
-
-func apply_knockback(direction: Vector3, force: float, toss: float) -> void:
-	direction.y = 0
-	_knockback_velocity = direction.normalized() * force
-	velocity.y = toss
+			velocity.x = move_toward(velocity.x, 0, speed * friction_mul * delta)
+			velocity.z = move_toward(velocity.z, 0, speed * friction_mul * delta)
 
 func _move_activity(delta: float) -> void:
 	var mouse_position: Vector2 = get_viewport().get_mouse_position()
@@ -131,42 +127,17 @@ func _get_ground_position(ray_origin: Vector3, ray_end: Vector3) -> Vector3:
 	return Vector3.INF
 
 func _attack(target: Vector3) -> void:
-	var muzzle: Vector3 = _gun.get_node("Muzzle").global_position
-	var direction: Vector3 = (target - muzzle).normalized()
-	var end_position: Vector3 = muzzle + direction * _gun.max_distance_attack
-	
-	var space_state := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(muzzle, end_position, 13, [self])
-	var hit: Dictionary = space_state.intersect_ray(query)
-	
-	if not hit.is_empty():
-		var collider = hit.collider
-		if collider and collider.has_method("take_damage"):
-			collider.take_damage(_gun.damage)
-		_spawn_tracer(muzzle, hit.position)
-	else:
-		_spawn_tracer(muzzle, end_position)
-
-func _spawn_tracer(from: Vector3, to: Vector3) -> void:
-	var distance: float = from.distance_to(to)
-	if distance < 0.01:
-		return
-	
-	var tracer: MeshInstance3D = MeshInstance3D.new()
-	var mesh = BoxMesh.new()
-	mesh.size = Vector3(0.1, 0.1, distance)
-	tracer.mesh = mesh
-	tracer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	tracer.material_override = _tracer_material.duplicate()
-	
-	get_tree().current_scene.add_child(tracer)
-	tracer.global_position = (from + to) * 0.5
-	tracer.look_at(to, Vector3.UP)
-	
-	var mat: StandardMaterial3D = tracer.material_override as StandardMaterial3D
-	var tween: Tween = tracer.create_tween()
-	tween.tween_property(mat, "albedo_color:a", 0.0, 0.08)
-	tween.tween_callback(tracer.queue_free)
+	_gun.shoot(target)
 
 func _die() -> void:
 	queue_free()
+
+func take_damage(damage: int) -> void:
+	_health -= damage
+	if _health <= 0:
+		_die()
+
+func apply_knockback(direction: Vector3, force: float, toss: float) -> void:
+	direction.y = 0
+	_knockback_velocity = direction.normalized() * force
+	velocity.y = toss

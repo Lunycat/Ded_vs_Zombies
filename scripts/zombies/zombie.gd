@@ -7,13 +7,13 @@ enum State {IDLE, PURSUIT, ATTACK}
 @export var move_speed: float = 3.0
 @export var damage: int = 30
 @export var attack_coldown: float = 0.7
-@export var knockback_force: float = 5.0 # Скорость отталкивания
+@export var knockback_force: float = 7.5 # Скорость отталкивания
 @export var toss: float = 5.0 # Высота подброса
 @export var slow_move: float = 3.0 # Замедление движения при остановке
 
 @onready var _navigation: NavigationAgent3D = $NavigationAgent3D
 
-var _player: CharacterBody3D = null
+var _player: Player = null
 var _attack_timer: float = 0.0
 var _player_in_range: bool = false
 var _current_state: State = State.IDLE

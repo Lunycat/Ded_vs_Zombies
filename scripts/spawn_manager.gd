@@ -8,7 +8,8 @@ extends Node3D
 
 const ZOMBIE_SCENE: Resource = preload("res://scenes/zombies/zombie.tscn")
 const GOLDEN_ANGLE: float = PI * (3.0 - sqrt(5.0))
-var _player: CharacterBody3D = null
+
+var _player: Player = null
 var _camera: Camera3D = null
 var _spawn_count: int = 0
 var _alive_zombie: int = 0
@@ -40,7 +41,7 @@ func _on_timeout() -> void:
 			_spawn_zombies(vector_valid)
 
 func _spawn_zombies(vector: Vector3) -> void:
-	var zombie: CharacterBody3D = ZOMBIE_SCENE.instantiate()
+	var zombie: Zombie = ZOMBIE_SCENE.instantiate()
 	zombie.tree_exited.connect(_decrement_alive_zombie)
 	add_child(zombie)
 	zombie.global_position = vector
